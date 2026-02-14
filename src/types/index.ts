@@ -11,6 +11,21 @@ export interface NoteHistory {
   reasondetails: string;
 }
 
+export interface SMSLog {
+  sms_id: number;
+  message: string;
+  owner: string;
+  customer_number: string;
+  date_sent: string;
+  send_status: string;
+  arrears: string;
+  phone_number: string;
+  stage_date: string;
+  reference_number: string;
+  gw_response: any;
+  extra: string;
+}
+
 export interface Account {
   id: string;
   custnumber: string;
@@ -20,6 +35,8 @@ export interface Account {
   status: string;
   lastContact: string;
   noteCount: number;
+  smsCount: number;
+  source: 'notes' | 'sms' | 'both';
 }
 
 export interface ChatMessage {

@@ -1,6 +1,7 @@
 import Groq from 'groq-sdk';
-import { NoteHistory, Account } from '@/types';
+import { NoteHistory, Account, SMSLog } from '@/types';
 import { calculateRisk, getRiskDescription } from '@/utils/riskLogic';
+import { getSMSStats } from './dataService';
 
 const groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
 
@@ -39,7 +40,8 @@ export async function generateAIResponse(
   userMessage: string,
   account: Account | null,
   notes: NoteHistory[],
-  conversationHistory: { role: 'user' | 'assistant'; content: string }[]
+  conversationHistory: { role: 'user' | 'assistant'; content: string }[],
+  smsLogs?: SMSLog[]
 ): Promise<string> {
   try {
     // Build context from account and notes
@@ -85,6 +87,37 @@ CURRENT ACCOUNT CONTEXT:
       }
     } else {
       contextMessage += 'No interaction history found for this account.\n';
+    }
+
+    // Add SMS context if available
+    if (smsLogs && smsLogs.length > 0) {
+      const smsStats = getSMSStats(smsLogs);
+      
+      contextMessage += `\nSMS COMMUNICATION HISTORY:\n`;
+      contextMessage += `- Total SMS Sent: ${smsStats.total}\n`;
+      contextMessage += `- Successfully Delivered: ${smsStats.successful}\n`;
+      contextMessage += `- Failed: ${smsStats.failed}\n`;
+      contextMessage += `- Delivery Rate: ${smsStats.successRate}%\n`;
+      if (smsStats.latestArrears) {
+        contextMessage += `- Latest Arrears Mentioned: Kes ${smsStats.latestArrears.toLocaleString()}\n`;
+      }
+      if (smsStats.latestDPD) {
+        contextMessage += `- Latest DPD from SMS: ${smsStats.latestDPD} days\n`;
+      }
+      contextMessage += `\nRecent SMS Messages (Most Recent First):\n`;
+      
+      const recentSMS = smsLogs.slice(0, 5);
+      recentSMS.forEach((sms, index) => {
+        contextMessage += `--- SMS ${index + 1} ---\n`;
+        contextMessage += `Date: ${sms.date_sent || 'N/A'}\n`;
+        contextMessage += `Status: ${sms.send_status || 'N/A'}\n`;
+        contextMessage += `Phone: ${sms.phone_number || 'N/A'}\n`;
+        contextMessage += `Message: ${sms.message || 'N/A'}\n\n`;
+      });
+      
+      if (smsLogs.length > 5) {
+        contextMessage += `[... and ${smsLogs.length - 5} older SMS messages not shown]\n`;
+      }
     }
 
     const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [

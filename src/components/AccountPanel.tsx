@@ -1,18 +1,20 @@
 import { useState } from 'react';
-import { ChevronRight, ChevronLeft, User, FileText, Tag, Clock, AlertCircle, Activity, Users, MessageSquare } from 'lucide-react';
-import { Account, NoteHistory } from '../types';
+import { ChevronRight, ChevronLeft, User, FileText, Tag, Clock, AlertCircle, Activity, Users, MessageSquare, MessageCircle, CheckCircle, XCircle, Phone } from 'lucide-react';
+import { Account, NoteHistory, SMSLog } from '../types';
 import { RiskBadge } from './RiskBadge';
 import { calculateRisk } from '../utils/riskLogic';
+import { getSMSStats } from '../services/dataService';
 
 interface AccountPanelProps {
   account: Account | null;
   notes: NoteHistory[];
+  smsLogs: SMSLog[];
   isCollapsed: boolean;
   onToggleCollapse: () => void;
 }
 
-export function AccountPanel({ account, notes, isCollapsed, onToggleCollapse }: AccountPanelProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'notes'>('overview');
+export function AccountPanel({ account, notes, smsLogs, isCollapsed, onToggleCollapse }: AccountPanelProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'sms'>('overview');
 
   if (!account) return null;
 
@@ -27,6 +29,9 @@ export function AccountPanel({ account, notes, isCollapsed, onToggleCollapse }: 
   
   // Get latest note
   const latestNote = notes[0];
+
+  // SMS Statistics
+  const smsStats = getSMSStats(smsLogs);
 
   // Risk assessment text
   const getRiskAssessmentText = () => {
@@ -89,14 +94,14 @@ export function AccountPanel({ account, notes, isCollapsed, onToggleCollapse }: 
       <div className="flex border-b border-slate-200">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`flex-1 px-4 py-2.5 text-[12px] font-semibold transition-all relative ${
+          className={`flex-1 px-3 py-2.5 text-[11px] font-semibold transition-all relative ${
             activeTab === 'overview'
               ? 'text-blue-600 bg-blue-50/50'
               : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
           }`}
         >
-          <span className="flex items-center justify-center gap-1.5">
-            <Activity className="w-3.5 h-3.5" />
+          <span className="flex items-center justify-center gap-1">
+            <Activity className="w-3 h-3" />
             Overview
           </span>
           {activeTab === 'overview' && (
@@ -105,20 +110,39 @@ export function AccountPanel({ account, notes, isCollapsed, onToggleCollapse }: 
         </button>
         <button
           onClick={() => setActiveTab('notes')}
-          className={`flex-1 px-4 py-2.5 text-[12px] font-semibold transition-all relative ${
+          className={`flex-1 px-3 py-2.5 text-[11px] font-semibold transition-all relative ${
             activeTab === 'notes'
               ? 'text-blue-600 bg-blue-50/50'
               : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
           }`}
         >
-          <span className="flex items-center justify-center gap-1.5">
-            <FileText className="w-3.5 h-3.5" />
+          <span className="flex items-center justify-center gap-1">
+            <FileText className="w-3 h-3" />
             Notes
-            <span className="ml-1 px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded text-[10px] font-bold">
+            <span className="ml-0.5 px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded text-[9px] font-bold">
               {notes.length}
             </span>
           </span>
           {activeTab === 'notes' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('sms')}
+          className={`flex-1 px-3 py-2.5 text-[11px] font-semibold transition-all relative ${
+            activeTab === 'sms'
+              ? 'text-blue-600 bg-blue-50/50'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <span className="flex items-center justify-center gap-1">
+            <MessageCircle className="w-3 h-3" />
+            SMS
+            <span className="ml-0.5 px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded text-[9px] font-bold">
+              {smsLogs.length}
+            </span>
+          </span>
+          {activeTab === 'sms' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
           )}
         </button>
@@ -166,15 +190,52 @@ export function AccountPanel({ account, notes, isCollapsed, onToggleCollapse }: 
                   <p className="text-[12px] font-semibold text-slate-700 mt-1">{account.status}</p>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                  <p className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold">Last Contact</p>
-                  <p className="text-[12px] font-semibold text-slate-700 mt-1">{latestNote?.notedate || 'N/A'}</p>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                   <p className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold">Total Notes</p>
                   <p className="text-[18px] font-bold text-slate-900 mt-0.5">{notes.length}</p>
                 </div>
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  <p className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold">SMS Sent</p>
+                  <p className="text-[18px] font-bold text-slate-900 mt-0.5">{smsLogs.length}</p>
+                </div>
               </div>
             </div>
+
+            {/* SMS Stats (if available) */}
+            {smsLogs.length > 0 && (
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-2">SMS Statistics</p>
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-[16px] font-bold text-blue-700">{smsStats.total}</p>
+                      <p className="text-[9px] text-blue-600 uppercase font-semibold">Total</p>
+                    </div>
+                    <div>
+                      <p className="text-[16px] font-bold text-emerald-600">{smsStats.successful}</p>
+                      <p className="text-[9px] text-emerald-600 uppercase font-semibold">Delivered</p>
+                    </div>
+                    <div>
+                      <p className="text-[16px] font-bold text-red-600">{smsStats.failed}</p>
+                      <p className="text-[9px] text-red-600 uppercase font-semibold">Failed</p>
+                    </div>
+                  </div>
+                  {smsStats.successRate > 0 && (
+                    <div className="mt-2 pt-2 border-t border-blue-200">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-blue-700 font-medium">Delivery Rate</span>
+                        <span className="text-[12px] font-bold text-blue-700">{smsStats.successRate}%</span>
+                      </div>
+                      <div className="mt-1 h-1.5 bg-blue-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-600 rounded-full transition-all"
+                          style={{ width: `${smsStats.successRate}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Agents */}
             {uniqueAgents.length > 0 && (
@@ -240,7 +301,7 @@ export function AccountPanel({ account, notes, isCollapsed, onToggleCollapse }: 
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === 'notes' ? (
           /* Notes Tab */
           <div>
             {notes.length === 0 ? (
@@ -298,6 +359,85 @@ export function AccountPanel({ account, notes, isCollapsed, onToggleCollapse }: 
                   <div className="p-3 text-center bg-slate-50">
                     <p className="text-[11px] text-slate-500 font-medium">
                       Showing 30 of {notes.length} notes
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* SMS Tab */
+          <div>
+            {smsLogs.length === 0 ? (
+              <div className="p-6 text-center">
+                <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <MessageCircle className="w-5 h-5 text-slate-400" />
+                </div>
+                <p className="text-[13px] font-medium text-slate-600">No SMS history</p>
+                <p className="text-[11px] text-slate-400 mt-1">No SMS messages found for this customer</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {smsLogs.slice(0, 30).map((sms) => (
+                  <div key={sms.sms_id} className="p-4 hover:bg-slate-50 transition-all">
+                    {/* SMS Header */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-md flex items-center justify-center ${
+                          sms.send_status?.toLowerCase() === 'success' 
+                            ? 'bg-gradient-to-br from-emerald-100 to-emerald-200' 
+                            : 'bg-gradient-to-br from-red-100 to-red-200'
+                        }`}>
+                          {sms.send_status?.toLowerCase() === 'success' 
+                            ? <CheckCircle className="w-3 h-3 text-emerald-600" />
+                            : <XCircle className="w-3 h-3 text-red-600" />
+                          }
+                        </div>
+                        <div>
+                          <span className="text-[12px] font-semibold text-slate-700">{sms.owner || 'System'}</span>
+                          <span className={`ml-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                            sms.send_status?.toLowerCase() === 'success'
+                              ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                              : 'text-red-700 bg-red-50 border border-red-200'
+                          }`}>
+                            {sms.send_status || 'Unknown'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SMS Content - UPDATED HERE */}
+                    <p className="text-[12px] text-slate-600 leading-relaxed mb-2.5 whitespace-pre-wrap">
+                      {sms.message || 'No content'}
+                    </p>
+
+                    {/* SMS Meta */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {sms.date_sent && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded font-medium">
+                          <Clock className="w-2.5 h-2.5" />
+                          {sms.date_sent}
+                        </span>
+                      )}
+                      {sms.phone_number && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-medium">
+                          <Phone className="w-2.5 h-2.5" />
+                          {sms.phone_number}
+                        </span>
+                      )}
+                      {sms.arrears && sms.arrears !== 'NULL' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-semibold border border-amber-200">
+                          Arrears: Kes {sms.arrears}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {smsLogs.length > 30 && (
+                  <div className="p-3 text-center bg-slate-50">
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Showing 30 of {smsLogs.length} SMS messages
                     </p>
                   </div>
                 )}

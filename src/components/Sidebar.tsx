@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Plus, ChevronDown, ChevronRight, Building2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Building2, FileText, MessageSquare } from 'lucide-react';
 import { Account } from '../types';
 import { RiskBadge } from './RiskBadge';
 import { calculateRisk } from '../utils/riskLogic';
@@ -8,11 +8,10 @@ interface SidebarProps {
   accounts: Account[];
   selectedAccount: Account | null;
   onSelectAccount: (account: Account) => void;
-  onAddAccount: () => void;
   isLoading?: boolean;
 }
 
-export function Sidebar({ accounts, selectedAccount, onSelectAccount, onAddAccount, isLoading }: SidebarProps) {
+export function Sidebar({ accounts, selectedAccount, onSelectAccount, isLoading }: SidebarProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     critical: true,
@@ -100,7 +99,7 @@ export function Sidebar({ accounts, selectedAccount, onSelectAccount, onAddAccou
               <button
                 key={account.id}
                 onClick={() => onSelectAccount(account)}
-                className={`w-full text-left px-3 py-2 rounded transition-all ${
+                className={`w-full text-left px-3 py-2.5 rounded transition-all ${
                   selectedAccount?.id === account.id
                     ? 'bg-blue-600 shadow-lg shadow-blue-600/20'
                     : 'hover:bg-slate-700/50'
@@ -118,6 +117,35 @@ export function Sidebar({ accounts, selectedAccount, onSelectAccount, onAddAccou
                     }`}>
                       {account.accnumber}
                     </p>
+                    {/* Source & Counts */}
+                    <div className="flex items-center gap-2 mt-1">
+                      {account.noteCount > 0 && (
+                        <span className={`inline-flex items-center gap-1 text-[10px] ${
+                          selectedAccount?.id === account.id ? 'text-blue-200' : 'text-slate-500'
+                        }`}>
+                          <FileText className="w-3 h-3" />
+                          {account.noteCount}
+                        </span>
+                      )}
+                      {account.smsCount > 0 && (
+                        <span className={`inline-flex items-center gap-1 text-[10px] ${
+                          selectedAccount?.id === account.id ? 'text-blue-200' : 'text-slate-500'
+                        }`}>
+                          <MessageSquare className="w-3 h-3" />
+                          {account.smsCount}
+                        </span>
+                      )}
+                      {/* Source Badge */}
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-medium ${
+                        account.source === 'both' 
+                          ? 'bg-purple-500/20 text-purple-300' 
+                          : account.source === 'sms' 
+                            ? 'bg-cyan-500/20 text-cyan-300' 
+                            : 'bg-slate-600/30 text-slate-400'
+                      }`}>
+                        {account.source === 'both' ? 'Both' : account.source === 'sms' ? 'SMS' : 'Notes'}
+                      </span>
+                    </div>
                   </div>
                   <RiskBadge dpd={account.dpd} status={account.status} size="xs" />
                 </div>
@@ -167,11 +195,25 @@ export function Sidebar({ accounts, selectedAccount, onSelectAccount, onAddAccou
         </div>
       </div>
 
-      {/* Account Count */}
+      {/* Account Count & Summary */}
       <div className="px-4 py-2.5 border-b border-slate-800 bg-slate-800/30">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Portfolios</span>
           <span className="text-[12px] font-semibold text-white">{accounts.length.toLocaleString()}</span>
+        </div>
+        <div className="flex items-center gap-3 text-[10px]">
+          <span className="flex items-center gap-1 text-slate-400">
+            <FileText className="w-3 h-3" />
+            {accounts.filter(a => a.source === 'notes' || a.source === 'both').length}
+          </span>
+          <span className="flex items-center gap-1 text-slate-400">
+            <MessageSquare className="w-3 h-3" />
+            {accounts.filter(a => a.source === 'sms' || a.source === 'both').length}
+          </span>
+          <span className="flex items-center gap-1 text-purple-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+            {accounts.filter(a => a.source === 'both').length} Both
+          </span>
         </div>
       </div>
 
@@ -194,16 +236,6 @@ export function Sidebar({ accounts, selectedAccount, onSelectAccount, onAddAccou
         )}
       </div>
 
-      {/* Add Account Button */}
-      <div className="p-3 border-t border-slate-800">
-        <button
-          onClick={onAddAccount}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-semibold rounded-lg transition-colors shadow-lg shadow-blue-600/20"
-        >
-          <Plus className="w-4 h-4" />
-          Add Account
-        </button>
-      </div>
     </div>
   );
 }

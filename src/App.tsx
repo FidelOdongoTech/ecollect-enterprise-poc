@@ -3,15 +3,14 @@ import { Sidebar } from './components/Sidebar';
 import { CommandBar } from './components/CommandBar';
 import { ChatInterface } from './components/ChatInterface';
 import { AccountPanel } from './components/AccountPanel';
-import { AddAccountModal } from './components/AddAccountModal';
-import { Account, NoteHistory } from './types';
-import { fetchAccounts, fetchNoteHistory } from './services/dataService';
+import { Account, NoteHistory, SMSLog } from './types';
+import { fetchAccounts, fetchNoteHistory, fetchSMSLogs } from './services/dataService';
 
 function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [noteHistory, setNoteHistory] = useState<NoteHistory[]>([]);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [smsLogs, setSmsLogs] = useState<SMSLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,13 +46,9 @@ function App() {
   useEffect(() => {
     if (selectedAccount) {
       fetchNoteHistory(selectedAccount.accnumber).then(setNoteHistory);
+      fetchSMSLogs(selectedAccount.custnumber).then(setSmsLogs);
     }
   }, [selectedAccount]);
-
-  const handleAccountAdded = () => {
-    loadAccounts(true);
-    setIsAddModalOpen(false);
-  };
 
   if (isLoading) {
     return (
@@ -96,7 +91,6 @@ function App() {
         accounts={accounts}
         selectedAccount={selectedAccount}
         onSelectAccount={setSelectedAccount}
-        onAddAccount={() => setIsAddModalOpen(true)}
         isLoading={isRefreshing}
       />
 
@@ -107,12 +101,13 @@ function App() {
           isRefreshing={isRefreshing}
         />
 
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex min-h-0 overflow-hidden">
           {/* Chat Interface */}
-          <div className="flex-1 flex flex-col min-w-0 border-r border-slate-200">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r border-slate-200">
             <ChatInterface
               account={selectedAccount}
               notes={noteHistory}
+              smsLogs={smsLogs}
             />
           </div>
 
@@ -120,18 +115,13 @@ function App() {
           <AccountPanel
             account={selectedAccount}
             notes={noteHistory}
+            smsLogs={smsLogs}
             isCollapsed={isPanelCollapsed}
             onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
           />
         </div>
       </div>
 
-      {/* Add Account Modal */}
-      <AddAccountModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAccountAdded={handleAccountAdded}
-      />
     </div>
   );
 }

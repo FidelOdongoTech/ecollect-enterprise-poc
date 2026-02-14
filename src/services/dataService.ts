@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { NoteHistory, Account } from '@/types';
+import { NoteHistory, Account, SMSLog } from '@/types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -16,11 +16,36 @@ export const supabase = createClient(
 // Connection test (runs once on load)
 async function testConnection() {
   try {
-    const { error } = await supabase.from('notehis').select('id').limit(1);
-    if (error) {
-      console.error('❌ Supabase connection error:', error.message);
+    // Test notehis table
+    const { data: notesTest, error: notesError } = await supabase
+      .from('notehis')
+      .select('id, custnumber')
+      .limit(3);
+    
+    if (notesError) {
+      console.error('❌ notehis connection error:', notesError.message);
     } else {
-      console.log('✅ Supabase connected to notehis table');
+      console.log('✅ notehis connected:', notesTest?.length, 'sample records');
+    }
+    
+    // Test sms_logs table
+    const { data: smsTest, error: smsError } = await supabase
+      .from('sms_logs')
+      .select('sms_id, customer_number')
+      .limit(3);
+    
+    if (smsError) {
+      console.error('❌ sms_logs connection error:', smsError.message);
+      console.error('❌ Make sure RLS policy exists! Run this SQL:');
+      console.error(`
+        ALTER TABLE sms_logs ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Allow all" ON sms_logs FOR ALL USING (true) WITH CHECK (true);
+      `);
+    } else {
+      console.log('✅ sms_logs connected:', smsTest?.length, 'sample records');
+      if (smsTest && smsTest.length > 0) {
+        console.log('📱 Sample SMS customer_numbers:', smsTest.map(s => s.customer_number));
+      }
     }
   } catch (e) {
     console.error('❌ Exception:', e);
@@ -87,11 +112,11 @@ export async function fetchCustomerNotes(custnumber: string): Promise<NoteHistor
 }
 
 /**
- * Check if an account number is valid (not NULL, empty, etc.)
+ * Check if a value is valid (not NULL, empty, etc.)
  */
-function isValidAccountNumber(accNum: unknown): boolean {
-  if (!accNum) return false;
-  const str = String(accNum).trim().toUpperCase();
+function isValidValue(value: unknown): boolean {
+  if (!value) return false;
+  const str = String(value).trim().toUpperCase();
   if (str === '') return false;
   if (str === 'NULL') return false;
   if (str === 'N/A') return false;
@@ -101,90 +126,181 @@ function isValidAccountNumber(accNum: unknown): boolean {
 }
 
 /**
- * Get unique accounts from notehis table with aggregated data
- * Derives accounts dynamically from your existing note data
- * Fetches ALL records using pagination (Supabase default limit is 1000)
+ * Fetch paginated data from a table
  */
-export async function fetchAccounts(): Promise<Account[]> {
-  // Paginate to fetch ALL records (5000+)
-  let allData: NoteHistory[] = [];
+async function fetchPaginatedData<T>(tableName: string, _orderBy?: string): Promise<T[]> {
+  let allData: T[] = [];
   const pageSize = 1000;
   let page = 0;
   let hasMore = true;
+  
+  console.log(`📄 Fetching from ${tableName}...`);
   
   while (hasMore) {
     const from = page * pageSize;
     const to = from + pageSize - 1;
     
-    const { data, error } = await supabase
-      .from('notehis')
+    const { data, error, status } = await supabase
+      .from(tableName)
       .select('*')
-      .order('id', { ascending: true })
       .range(from, to);
     
     if (error) {
-      console.error('❌ Error fetching page:', error);
+      console.error(`❌ Error fetching ${tableName} page ${page}:`, error.message);
+      console.error(`❌ Status: ${status}, Details:`, error);
       break;
     }
     
     if (data && data.length > 0) {
-      allData = [...allData, ...data];
+      console.log(`   Page ${page + 1}: ${data.length} records`);
+      allData = [...allData, ...data as T[]];
       page++;
       hasMore = data.length === pageSize;
     } else {
       hasMore = false;
     }
   }
+  
+  console.log(`✅ Total from ${tableName}: ${allData.length} records`);
+  return allData;
+}
 
-  if (allData.length === 0) {
-    console.warn('⚠️ No data returned from notehis table');
-    return [];
+/**
+ * Get unique accounts from BOTH notehis and sms_logs tables
+ * Merges customers from both sources so you see:
+ * - Customers with notes only
+ * - Customers with SMS only
+ * - Customers with both
+ */
+export async function fetchAccounts(): Promise<Account[]> {
+  console.log('📡 Fetching accounts from both notehis and sms_logs...');
+  
+  // Fetch data from both tables in parallel
+  let notesData: NoteHistory[] = [];
+  let smsData: SMSLog[] = [];
+  
+  try {
+    const results = await Promise.all([
+      fetchPaginatedData<NoteHistory>('notehis', 'id'),
+      fetchPaginatedData<SMSLog>('sms_logs', 'sms_id')
+    ]);
+    notesData = results[0];
+    smsData = results[1];
+  } catch (error) {
+    console.error('❌ Error fetching data:', error);
+  }
+  
+  console.log(`📊 Fetched ${notesData.length} notes and ${smsData.length} SMS records`);
+  
+  // Debug: Show sample SMS data
+  if (smsData.length > 0) {
+    console.log('📱 Sample SMS record:', smsData[0]);
+    console.log('📱 SMS customer_number field:', smsData[0].customer_number);
+  } else {
+    console.warn('⚠️ No SMS data fetched! Check sms_logs table.');
   }
 
-  // Filter to only records with valid account numbers
-  const validRecords = allData.filter(note => isValidAccountNumber(note.accnumber));
+  // Create a unified customer map
+  // Key: custnumber, Value: { notes, sms, accnumbers }
+  const customerMap = new Map<string, {
+    notes: NoteHistory[];
+    sms: SMSLog[];
+    accnumbers: Set<string>;
+  }>();
 
-  // Group notes by account number
-  const accountMap = new Map<string, { notes: NoteHistory[], custnumber: string }>();
-  
-  validRecords.forEach((note: NoteHistory) => {
-    const accKey = String(note.accnumber).trim();
+  // Process notes - group by custnumber
+  notesData.forEach(note => {
+    const custKey = String(note.custnumber || '').trim();
+    if (!isValidValue(custKey)) return;
     
-    if (!accountMap.has(accKey)) {
-      accountMap.set(accKey, { notes: [], custnumber: note.custnumber || '' });
+    if (!customerMap.has(custKey)) {
+      customerMap.set(custKey, { notes: [], sms: [], accnumbers: new Set() });
     }
-    accountMap.get(accKey)!.notes.push(note);
+    
+    const customer = customerMap.get(custKey)!;
+    customer.notes.push(note);
+    
+    if (isValidValue(note.accnumber)) {
+      customer.accnumbers.add(String(note.accnumber).trim());
+    }
   });
-  
-  // Accounts grouped
 
-  // Create account objects
+  // Process SMS - group by customer_number
+  smsData.forEach(sms => {
+    const custKey = String(sms.customer_number || '').trim();
+    if (!isValidValue(custKey)) return;
+    
+    if (!customerMap.has(custKey)) {
+      customerMap.set(custKey, { notes: [], sms: [], accnumbers: new Set() });
+    }
+    
+    customerMap.get(custKey)!.sms.push(sms);
+  });
+
+  // Create account objects from merged data
   const accounts: Account[] = [];
   
-  accountMap.forEach((value, accnumber) => {
-    const { notes, custnumber } = value;
-    const latestNote = notes[0];
+  customerMap.forEach((data, custnumber) => {
+    const { notes, sms, accnumbers } = data;
     
-    // Extract status and DPD from notes
-    const status = extractStatus(notes);
-    const dpd = extractDPD(notes);
+    // Determine source
+    let source: 'notes' | 'sms' | 'both';
+    if (notes.length > 0 && sms.length > 0) {
+      source = 'both';
+    } else if (notes.length > 0) {
+      source = 'notes';
+    } else {
+      source = 'sms';
+    }
+    
+    // Get account number (prefer from notes, fallback to custnumber)
+    const accnumber = accnumbers.size > 0 
+      ? Array.from(accnumbers)[0] 
+      : `SMS-${custnumber}`;
+    
+    // Extract status and DPD from notes or SMS
+    let status = 'Active';
+    let dpd = 0;
+    let lastContact = 'N/A';
+    
+    if (notes.length > 0) {
+      status = extractStatus(notes);
+      dpd = extractDPD(notes);
+      lastContact = notes[0]?.notedate || 'N/A';
+    } else if (sms.length > 0) {
+      // Extract DPD from SMS messages
+      const smsStats = getSMSStats(sms);
+      dpd = smsStats.latestDPD || 0;
+      lastContact = sms[0]?.date_sent || 'N/A';
+      status = dpd > 30 ? 'SMS Only - Overdue' : 'SMS Only';
+    }
     
     accounts.push({
-      id: accnumber,
+      id: custnumber,
       custnumber,
       accnumber,
-      customerName: custnumber ? `Customer ${custnumber}` : `Account ${accnumber}`,
+      customerName: `Customer ${custnumber}`,
       dpd,
       status,
-      lastContact: latestNote?.notedate || 'N/A',
-      noteCount: notes.length
+      lastContact,
+      noteCount: notes.length,
+      smsCount: sms.length,
+      source
     });
   });
 
   // Sort by DPD (highest first) for priority
   accounts.sort((a, b) => b.dpd - a.dpd);
 
-  console.log(`✅ Loaded ${accounts.length} accounts from Supabase`);
+  // Log summary
+  const notesOnly = accounts.filter(a => a.source === 'notes').length;
+  const smsOnly = accounts.filter(a => a.source === 'sms').length;
+  const both = accounts.filter(a => a.source === 'both').length;
+  
+  console.log(`✅ Loaded ${accounts.length} total customers:`);
+  console.log(`   📝 Notes only: ${notesOnly}`);
+  console.log(`   📱 SMS only: ${smsOnly}`);
+  console.log(`   📝📱 Both: ${both}`);
 
   return accounts;
 }
@@ -301,4 +417,97 @@ function extractDPD(notes: NoteHistory[]): number {
   if (noteCount > 10) return 60 + Math.min(noteCount * 3, 120);
   if (noteCount > 5) return 30 + noteCount * 3;
   return 10 + noteCount * 2;
+}
+
+/**
+ * Fetch SMS logs for a specific customer
+ */
+export async function fetchSMSLogs(customerNumber: string): Promise<SMSLog[]> {
+  const { data, error } = await supabase
+    .from('sms_logs')
+    .select('*')
+    .eq('customer_number', customerNumber)
+    .order('date_sent', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching SMS logs:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all SMS logs (paginated)
+ */
+export async function fetchAllSMSLogs(): Promise<SMSLog[]> {
+  let allData: SMSLog[] = [];
+  const pageSize = 1000;
+  let page = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    
+    const { data, error } = await supabase
+      .from('sms_logs')
+      .select('*')
+      .order('sms_id', { ascending: false })
+      .range(from, to);
+    
+    if (error) {
+      console.error('❌ Error fetching SMS page:', error);
+      break;
+    }
+    
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      page++;
+      hasMore = data.length === pageSize;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  console.log(`✅ Loaded ${allData.length} SMS logs from Supabase`);
+  return allData;
+}
+
+/**
+ * Get SMS statistics for a customer
+ */
+export function getSMSStats(smsLogs: SMSLog[]) {
+  const total = smsLogs.length;
+  const successful = smsLogs.filter(s => s.send_status?.toLowerCase() === 'success').length;
+  const failed = total - successful;
+  
+  // Extract arrears from messages
+  const arrearsAmounts: number[] = [];
+  smsLogs.forEach(sms => {
+    const match = sms.message?.match(/Kes\.?\s*([\d,]+(?:\.\d{2})?)/i);
+    if (match) {
+      const amount = parseFloat(match[1].replace(/,/g, ''));
+      if (!isNaN(amount)) arrearsAmounts.push(amount);
+    }
+  });
+  
+  // Extract DPD from messages
+  const dpdValues: number[] = [];
+  smsLogs.forEach(sms => {
+    const match = sms.message?.match(/late by (\d+)\s*days?/i);
+    if (match) {
+      dpdValues.push(parseInt(match[1], 10));
+    }
+  });
+
+  return {
+    total,
+    successful,
+    failed,
+    successRate: total > 0 ? Math.round((successful / total) * 100) : 0,
+    latestArrears: arrearsAmounts.length > 0 ? arrearsAmounts[0] : null,
+    latestDPD: dpdValues.length > 0 ? dpdValues[0] : null,
+    lastSentDate: smsLogs.length > 0 ? smsLogs[0].date_sent : null
+  };
 }

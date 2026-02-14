@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Volume2, VolumeX, MessageSquare, Trash2, Settings, X } from 'lucide-react';
-import { Account, NoteHistory, ChatMessage } from '../types';
+import { Send, Bot, User, Volume2, VolumeX, MessageSquare, Trash2, Settings, X, Play } from 'lucide-react';
+import { Account, NoteHistory, ChatMessage, SMSLog } from '../types';
 import { generateAIResponse } from '../services/aiService';
 import { RiskBadge } from './RiskBadge';
 import { VoiceInput } from './VoiceInput';
@@ -8,14 +8,23 @@ import { VoiceInput } from './VoiceInput';
 interface ChatInterfaceProps {
   account: Account | null;
   notes: NoteHistory[];
+  smsLogs?: SMSLog[];
+}
+
+interface VoiceSettings {
+  voiceIndex: number;
+  rate: number;
+  pitch: number;
+  autoSpeak: boolean;
 }
 
 // Helper to get localStorage key for an account
 const getStorageKey = (accountNumber: string) => `ecollect_chat_${accountNumber}`;
+const VOICE_SETTINGS_KEY = 'ecollect_voice_settings';
 
 // Helper to format text with bold account numbers
 const formatMessageContent = (content: string): string => {
-  // Replace **text** with <strong>text</strong>
+  // Replace **text** with bold markers
   let formatted = content.replace(/\*\*([^*]+)\*\*/g, '%%BOLD_START%%$1%%BOLD_END%%');
   // Also bold any standalone account number patterns (alphanumeric 10+ chars starting with A or letters)
   formatted = formatted.replace(/\b([A-Z]{1,3}\d{8,})\b/g, '%%BOLD_START%%$1%%BOLD_END%%');
@@ -47,79 +56,63 @@ const RenderFormattedContent = ({ content }: { content: string }) => {
   return <>{elements}</>;
 };
 
-// Voice settings interface
-interface VoiceSettings {
-  voiceIndex: number;
-  rate: number;
-  pitch: number;
-  autoSpeak: boolean;
-}
-
-const defaultVoiceSettings: VoiceSettings = {
-  voiceIndex: 0,
-  rate: 1,
-  pitch: 1,
-  autoSpeak: false
-};
-
-// Get voice settings from localStorage
-const getVoiceSettings = (): VoiceSettings => {
-  const saved = localStorage.getItem('ecollect_voice_settings');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {
-      return defaultVoiceSettings;
-    }
-  }
-  return defaultVoiceSettings;
-};
-
-// Save voice settings to localStorage
-const saveVoiceSettings = (settings: VoiceSettings) => {
-  localStorage.setItem('ecollect_voice_settings', JSON.stringify(settings));
-};
-
-export function ChatInterface({ account, notes }: ChatInterfaceProps) {
+export function ChatInterface({ account, notes, smsLogs = [] }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
-  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(getVoiceSettings);
+  const [showSettings, setShowSettings] = useState(false);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>({
+    voiceIndex: 0,
+    rate: 1,
+    pitch: 1,
+    autoSpeak: false
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load available voices
+  // Load voices and settings on mount
   useEffect(() => {
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
         setAvailableVoices(voices);
         
-        // Try to find a female voice by default if no settings saved
-        const savedSettings = getVoiceSettings();
-        if (savedSettings.voiceIndex === 0) {
-          const femaleVoiceIndex = voices.findIndex(v => 
-            v.name.toLowerCase().includes('female') ||
-            v.name.toLowerCase().includes('samantha') ||
-            v.name.toLowerCase().includes('victoria') ||
-            v.name.toLowerCase().includes('karen') ||
-            v.name.toLowerCase().includes('moira') ||
-            v.name.toLowerCase().includes('fiona') ||
-            v.name.toLowerCase().includes('zira') ||
-            v.name.toLowerCase().includes('hazel') ||
-            v.name.includes('Microsoft Zira') ||
-            v.name.includes('Google UK English Female') ||
-            v.name.includes('Google US English')
-          );
-          if (femaleVoiceIndex !== -1) {
-            const newSettings = { ...savedSettings, voiceIndex: femaleVoiceIndex };
-            setVoiceSettings(newSettings);
-            saveVoiceSettings(newSettings);
+        // Load saved settings or find default male voice
+        const savedSettings = localStorage.getItem(VOICE_SETTINGS_KEY);
+        if (savedSettings) {
+          try {
+            const parsed = JSON.parse(savedSettings);
+            // Validate the voice index is still valid
+            if (parsed.voiceIndex < voices.length) {
+              setVoiceSettings(parsed);
+            }
+          } catch {
+            findDefaultMaleVoice(voices);
           }
+        } else {
+          findDefaultMaleVoice(voices);
         }
+      }
+    };
+
+    const findDefaultMaleVoice = (voices: SpeechSynthesisVoice[]) => {
+      // Try to find a male voice by default
+      const maleIndex = voices.findIndex(v => 
+        v.name.toLowerCase().includes('male') ||
+        v.name.toLowerCase().includes('david') ||
+        v.name.toLowerCase().includes('james') ||
+        v.name.toLowerCase().includes('daniel') ||
+        v.name.toLowerCase().includes('alex') ||
+        v.name.toLowerCase().includes('mark') ||
+        v.name.toLowerCase().includes('thomas') ||
+        v.name.includes('Microsoft David') ||
+        v.name.includes('Google UK English Male')
+      );
+      
+      if (maleIndex !== -1) {
+        setVoiceSettings(prev => ({ ...prev, voiceIndex: maleIndex }));
       }
     };
 
@@ -131,12 +124,12 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
     };
   }, []);
 
-  // Update voice settings
-  const updateVoiceSettings = (updates: Partial<VoiceSettings>) => {
-    const newSettings = { ...voiceSettings, ...updates };
-    setVoiceSettings(newSettings);
-    saveVoiceSettings(newSettings);
-  };
+  // Save voice settings when they change
+  useEffect(() => {
+    if (availableVoices.length > 0) {
+      localStorage.setItem(VOICE_SETTINGS_KEY, JSON.stringify(voiceSettings));
+    }
+  }, [voiceSettings, availableVoices]);
 
   // Load messages from localStorage when account changes
   useEffect(() => {
@@ -213,7 +206,7 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
         content: m.content
       }));
 
-      const response = await generateAIResponse(input, account, notes, conversationHistory);
+      const response = await generateAIResponse(input, account, notes, conversationHistory, smsLogs);
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -253,7 +246,7 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
       }
       const utterance = new SpeechSynthesisUtterance(text.replace(/[*#_]/g, ''));
       
-      // Apply voice settings
+      // Use selected voice
       if (availableVoices.length > 0 && voiceSettings.voiceIndex < availableVoices.length) {
         utterance.voice = availableVoices[voiceSettings.voiceIndex];
       }
@@ -267,9 +260,31 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
     }
   };
 
-  // Test voice with current settings
   const testVoice = () => {
-    speakMessage("Hello! I'm your AI collections assistant. How can I help you today?");
+    speakMessage("Hello, this is a test of the current voice settings. How does this sound?");
+  };
+
+  const getVoiceDisplayName = (voice: SpeechSynthesisVoice) => {
+    const name = voice.name;
+    const lang = voice.lang;
+    const isMale = name.toLowerCase().includes('male') || 
+                   name.toLowerCase().includes('david') || 
+                   name.toLowerCase().includes('james') ||
+                   name.toLowerCase().includes('daniel') ||
+                   name.toLowerCase().includes('alex') ||
+                   name.toLowerCase().includes('mark');
+    const isFemale = name.toLowerCase().includes('female') || 
+                     name.toLowerCase().includes('zira') || 
+                     name.toLowerCase().includes('samantha') ||
+                     name.toLowerCase().includes('victoria') ||
+                     name.toLowerCase().includes('karen') ||
+                     name.toLowerCase().includes('fiona');
+    
+    let gender = '';
+    if (isMale) gender = '♂';
+    else if (isFemale) gender = '♀';
+    
+    return `${name} (${lang}) ${gender}`;
   };
 
   const quickActions = [
@@ -294,7 +309,7 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-50">
+    <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
       {/* Chat Header */}
       <div className="bg-white border-b border-slate-200 px-5 py-3">
         <div className="flex items-center justify-between">
@@ -324,8 +339,8 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
             </div>
             <div className="h-8 w-px bg-slate-200"></div>
             <button
-              onClick={() => setShowVoiceSettings(!showVoiceSettings)}
-              className={`p-2 rounded-lg transition-all ${showVoiceSettings ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+              onClick={() => setShowSettings(!showSettings)}
+              className={`p-2 rounded-lg transition-all ${showSettings ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
               title="Voice settings"
             >
               <Settings className="w-4 h-4" />
@@ -342,33 +357,35 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
       </div>
 
       {/* Voice Settings Panel */}
-      {showVoiceSettings && (
+      {showSettings && (
         <div className="bg-white border-b border-slate-200 px-5 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-[13px] font-semibold text-slate-700 flex items-center gap-2">
-              <Volume2 className="w-4 h-4" />
-              Voice Settings
-            </h4>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Volume2 className="w-4 h-4 text-slate-600" />
+              <h4 className="text-[13px] font-semibold text-slate-800">Voice Settings</h4>
+            </div>
             <button
-              onClick={() => setShowVoiceSettings(false)}
+              onClick={() => setShowSettings(false)}
               className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-all"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Voice Selection */}
             <div>
-              <label className="block text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1.5">Voice</label>
+              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Voice
+              </label>
               <select
                 value={voiceSettings.voiceIndex}
-                onChange={(e) => updateVoiceSettings({ voiceIndex: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => setVoiceSettings(prev => ({ ...prev, voiceIndex: parseInt(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 {availableVoices.map((voice, index) => (
                   <option key={index} value={index}>
-                    {voice.name} ({voice.lang})
+                    {getVoiceDisplayName(voice)}
                   </option>
                 ))}
               </select>
@@ -376,7 +393,7 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
 
             {/* Speed */}
             <div>
-              <label className="block text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1.5">
+              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                 Speed: {voiceSettings.rate.toFixed(1)}x
               </label>
               <input
@@ -385,14 +402,18 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
                 max="2"
                 step="0.1"
                 value={voiceSettings.rate}
-                onChange={(e) => updateVoiceSettings({ rate: parseFloat(e.target.value) })}
+                onChange={(e) => setVoiceSettings(prev => ({ ...prev, rate: parseFloat(e.target.value) }))}
                 className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
               />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>0.5x</span>
+                <span>2x</span>
+              </div>
             </div>
 
             {/* Pitch */}
             <div>
-              <label className="block text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-1.5">
+              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                 Pitch: {voiceSettings.pitch.toFixed(1)}
               </label>
               <input
@@ -401,36 +422,45 @@ export function ChatInterface({ account, notes }: ChatInterfaceProps) {
                 max="2"
                 step="0.1"
                 value={voiceSettings.pitch}
-                onChange={(e) => updateVoiceSettings({ pitch: parseFloat(e.target.value) })}
+                onChange={(e) => setVoiceSettings(prev => ({ ...prev, pitch: parseFloat(e.target.value) }))}
                 className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
               />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>Low</span>
+                <span>High</span>
+              </div>
             </div>
 
-            {/* Test & Auto-speak */}
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={testVoice}
-                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-medium transition-all flex items-center justify-center gap-2"
-              >
-                <Volume2 className="w-3.5 h-3.5" />
-                Test Voice
-              </button>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={voiceSettings.autoSpeak}
-                  onChange={(e) => updateVoiceSettings({ autoSpeak: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                />
-                <span className="text-[11px] text-slate-600 font-medium">Auto-speak responses</span>
+            {/* Actions */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Actions
               </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={testVoice}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-medium rounded-lg transition-all"
+                >
+                  <Play className="w-3 h-3" />
+                  Test Voice
+                </button>
+                <label className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg cursor-pointer hover:bg-slate-200 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={voiceSettings.autoSpeak}
+                    onChange={(e) => setVoiceSettings(prev => ({ ...prev, autoSpeak: e.target.checked }))}
+                    className="w-3.5 h-3.5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span className="text-[11px] font-medium text-slate-600 whitespace-nowrap">Auto-speak</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
         {messages.map((message) => (
           <div
             key={message.id}
