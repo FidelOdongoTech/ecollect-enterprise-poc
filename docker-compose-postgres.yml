@@ -1,0 +1,126 @@
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║           eCollect Enterprise - Direct PostgreSQL Setup                    ║
+# ║                                                                            ║
+# ║   Fill in YOUR PostgreSQL details below and run:                           ║
+# ║   docker-compose -f docker-compose.postgres.yml up --build                 ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # BACKEND API (Connects to YOUR PostgreSQL)
+  # ============================================================================
+  backend:
+    build: ./backend
+    container_name: ecollect-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      # ╔══════════════════════════════════════════════════════════════════════╗
+      # ║  🔧 FILL IN YOUR POSTGRESQL DETAILS BELOW                            ║
+      # ╚══════════════════════════════════════════════════════════════════════╝
+      
+      # Your PostgreSQL server IP or hostname
+      - PG_HOST=_____________YOUR_POSTGRES_HOST_____________
+      
+      # PostgreSQL port (default is 5432)
+      - PG_PORT=5432
+      
+      # Your database name
+      - PG_DATABASE=_____________YOUR_DATABASE_NAME_____________
+      
+      # Database username
+      - PG_USER=_____________YOUR_USERNAME_____________
+      
+      # Database password
+      - PG_PASSWORD=_____________YOUR_PASSWORD_____________
+      
+      # SSL connection required? (true/false)
+      - PG_SSL=false
+      
+      # ╔══════════════════════════════════════════════════════════════════════╗
+      # ║  ✅ DONE! No more changes needed below this line.                    ║
+      # ╚══════════════════════════════════════════════════════════════════════╝
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ecollect-network
+
+  # ============================================================================
+  # FRONTEND (React App)
+  # ============================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Connect frontend to backend API (uses nginx proxy)
+        - VITE_API_URL=/api
+        # Groq API key for AI features
+        - VITE_GROQ_API_KEY=${paste key}
+    container_name: ecollect-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - ecollect-network
+
+networks:
+  ecollect-network:
+    driver: bridge
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║                           INSTRUCTIONS                                     ║
+# ╠════════════════════════════════════════════════════════════════════════════╣
+# ║                                                                            ║
+# ║  1. Fill in YOUR PostgreSQL details in the backend environment section    ║
+# ║                                                                            ║
+# ║  2. Make sure these tables exist in your PostgreSQL database:              ║
+# ║                                                                            ║
+# ║     CREATE TABLE notehis (                                                 ║
+# ║         id INTEGER PRIMARY KEY,                                            ║
+# ║         custnumber TEXT,                                                   ║
+# ║         accnumber TEXT,                                                    ║
+# ║         notemade TEXT,                                                     ║
+# ║         owner TEXT,                                                        ║
+# ║         notedate TEXT,                                                     ║
+# ║         notesrc TEXT,                                                      ║
+# ║         noteimp TEXT,                                                      ║
+# ║         reason TEXT,                                                       ║
+# ║         reasondetails TEXT                                                 ║
+# ║     );                                                                     ║
+# ║                                                                            ║
+# ║     CREATE TABLE sms_logs (                                                ║
+# ║         sms_id BIGINT PRIMARY KEY,                                         ║
+# ║         message TEXT,                                                      ║
+# ║         owner TEXT,                                                        ║
+# ║         customer_number TEXT,                                              ║
+# ║         date_sent TEXT,                                                    ║
+# ║         send_status TEXT,                                                  ║
+# ║         arrears TEXT,                                                      ║
+# ║         phone_number TEXT,                                                 ║
+# ║         stage_date TEXT,                                                   ║
+# ║         reference_number TEXT,                                             ║
+# ║         gw_response JSONB,                                                 ║
+# ║         extra TEXT                                                         ║
+# ║     );                                                                     ║
+# ║                                                                            ║
+# ║  3. Run the system:                                                        ║
+# ║                                                                            ║
+# ║     docker-compose -f docker-compose.postgres.yml up --build               ║
+# ║                                                                            ║
+# ║  4. Access the application:                                                ║
+# ║                                                                            ║
+# ║     http://localhost:3000                                                  ║
+# ║                                                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝

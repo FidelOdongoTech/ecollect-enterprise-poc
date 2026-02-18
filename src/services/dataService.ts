@@ -1,5 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import { NoteHistory, Account, SMSLog } from '@/types';
+import {
+  isDirectAPIMode,
+  fetchAccountsFromAPI,
+  fetchNoteHistoryFromAPI,
+  fetchSMSLogsFromAPI,
+  addNoteFromAPI,
+  searchNotesFromAPI
+} from './apiService';
+
+// Check which mode we're in
+const API_MODE = isDirectAPIMode();
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -59,6 +70,11 @@ testConnection();
  * If accnumber is provided, filters by that account
  */
 export async function fetchNoteHistory(accnumber?: string): Promise<NoteHistory[]> {
+  // Use direct API if configured
+  if (API_MODE && accnumber) {
+    return fetchNoteHistoryFromAPI(accnumber);
+  }
+
   let query = supabase.from('notehis').select('*');
   
   if (accnumber) {
@@ -173,6 +189,12 @@ async function fetchPaginatedData<T>(tableName: string, _orderBy?: string): Prom
  * - Customers with both
  */
 export async function fetchAccounts(): Promise<Account[]> {
+  // Use direct API if configured
+  if (API_MODE) {
+    console.log('📡 Using direct PostgreSQL API...');
+    return fetchAccountsFromAPI();
+  }
+  
   console.log('📡 Fetching accounts from both notehis and sms_logs...');
   
   // Fetch data from both tables in parallel
@@ -309,6 +331,11 @@ export async function fetchAccounts(): Promise<Account[]> {
  * Add a new note to an account
  */
 export async function addNote(note: Partial<NoteHistory>): Promise<NoteHistory> {
+  // Use direct API if configured
+  if (API_MODE) {
+    return addNoteFromAPI(note);
+  }
+  
   // Get the max ID first to generate next ID
   const { data: maxIdData } = await supabase
     .from('notehis')
@@ -347,6 +374,11 @@ export async function addNote(note: Partial<NoteHistory>): Promise<NoteHistory> 
  * Search notes by content
  */
 export async function searchNotes(query: string): Promise<NoteHistory[]> {
+  // Use direct API if configured
+  if (API_MODE) {
+    return searchNotesFromAPI(query);
+  }
+  
   const { data, error } = await supabase
     .from('notehis')
     .select('*')
@@ -423,6 +455,11 @@ function extractDPD(notes: NoteHistory[]): number {
  * Fetch SMS logs for a specific customer
  */
 export async function fetchSMSLogs(customerNumber: string): Promise<SMSLog[]> {
+  // Use direct API if configured
+  if (API_MODE) {
+    return fetchSMSLogsFromAPI(customerNumber);
+  }
+  
   const { data, error } = await supabase
     .from('sms_logs')
     .select('*')
