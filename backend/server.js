@@ -15,17 +15,20 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// PostgreSQL Connection Pool
+// PostgreSQL Connection Pool (Neon-safe)
 const pool = new Pool({
   host: process.env.PG_HOST,
-  port: process.env.PG_PORT || 5432,
+  port: 5432, // Neon always uses 5432
   database: process.env.PG_DATABASE,
   user: process.env.PG_USER,
   password: process.env.PG_PASSWORD,
-  ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  max: 20,
+
+  ssl: { rejectUnauthorized: false },
+
+  connectionTimeoutMillis: 10000, // increase timeout
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  max: 5,          
+  family: 4,       
 });
 
 // Test database connection on startup
